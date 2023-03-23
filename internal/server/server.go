@@ -1,8 +1,6 @@
 package server
 
 import (
-	"go-app/internal/server/books"
-	"go-app/internal/server/sauth"
 	"go-app/pkg/auth"
 
 	"github.com/golang-jwt/jwt/v4"
@@ -13,25 +11,35 @@ import (
 
 type Server struct {
 	echo *echo.Echo
+	g    *echo.Group
 }
 
-func New(secret string) *Server {
+func New(apiRoot *string, secret string) *Server {
 	e := echo.New()
 	e.Use(middleware.Logger())
 
-	g := e.Group("/api/v1")
+	var prefix string = "/api/v1"
+	if apiRoot != nil {
+		prefix = *apiRoot
+	}
 
-	authMiddleware := echojwt.WithConfig(makeConfig(secret))
-
-	sauth.SetupGroup(g)
-	books.SetupGroup(g, authMiddleware)
+	gAPI := e.Group(prefix)
 
 	return &Server{
 		echo: e,
+		g:    gAPI,
 	}
 }
 
-func makeConfig(secret string) echojwt.Config {
+type RouterGroup interface {
+	SetupGroup(g *echo.Group)
+}
+
+func (s *Server) AddGroup(rg RouterGroup) {
+	rg.SetupGroup(s.g)
+}
+
+func MakeConfig(secret string) echojwt.Config {
 	return echojwt.Config{
 		NewClaimsFunc: func(c echo.Context) jwt.Claims {
 			return new(auth.JwtCustomClaims)

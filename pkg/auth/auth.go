@@ -10,11 +10,7 @@ import (
 	"github.com/golang-jwt/jwt/v4"
 )
 
-// const SECRET = "secret"
-const SUB = "token-subject"
-
 type CustomClaim struct {
-	// Sub   string `json:"sub"`
 	Id    string `json:"id"`
 	Email string `json:"email"`
 }
@@ -29,8 +25,8 @@ type Auth struct {
 	secret      string
 }
 
-func New(uSvc usr.UserService) *Auth {
-	return &Auth{uSvc, "secret"}
+func New(uSvc usr.UserService, secret string) *Auth {
+	return &Auth{uSvc, secret}
 }
 
 func (a *Auth) Login(id, email, pw string) (string, string, error) {
@@ -109,13 +105,6 @@ func (a *Auth) generateTokens(claims CustomClaim) (string, string, error) {
 }
 
 func (a *Auth) createToken(data CustomClaim, expire time.Time) (string, error) {
-	// token := jwt.New(jwt.SigningMethodHS256)
-	// claims := token.Claims.(jwt.MapClaims)
-	// for key, val := range data {
-	// 	claims[key] = val
-	// }
-	// claims["exp"] = expire.Unix()
-
 	claims := &JwtCustomClaims{
 		data,
 		jwt.RegisteredClaims{
@@ -125,12 +114,6 @@ func (a *Auth) createToken(data CustomClaim, expire time.Time) (string, error) {
 
 	// Create token with claims
 	token := jwt.NewWithClaims(jwt.SigningMethodHS256, claims)
-
-	// // Generate encoded token and send it as response.
-	// t, err := token.SignedString([]byte("secret"))
-	// if err != nil {
-	// 	return err
-	// }
 
 	encToken, err := token.SignedString([]byte(a.secret))
 	if err != nil {

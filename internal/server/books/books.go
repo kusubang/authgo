@@ -2,47 +2,59 @@ package books
 
 import (
 	"fmt"
-	"go-app/pkg/auth"
-	"go-app/pkg/usr"
+	"go-app/internal/server"
+	"go-app/pkg/books"
 	"net/http"
 
 	"github.com/golang-jwt/jwt/v4"
+	echojwt "github.com/labstack/echo-jwt/v4"
 	"github.com/labstack/echo/v4"
 )
 
 type BookRouter struct {
+	middleware echo.MiddlewareFunc
 }
 
-func SetupGroup(g *echo.Group, middleware echo.MiddlewareFunc) {
-	ng := g.Group("/books")
-	authSvc := auth.New(&usr.UserServiceMem{})
-	controller := BookController{authSvc}
+func NewBookGroup(secret string) *BookRouter {
+	authMiddleware := echojwt.WithConfig(server.MakeConfig(secret))
+	return &BookRouter{
+		authMiddleware,
+	}
+}
 
-	// ng.Use(echojwt.WithConfig(config))
-	ng.Use(middleware)
+func (b *BookRouter) SetupGroup(parentGroup *echo.Group) {
+	ng := parentGroup.Group("/books")
+	controller := BookController{bookService{}}
+
+	ng.Use(b.middleware) // add guard
 
 	ng.GET("", controller.listBooks)
 }
 
 type BookController struct {
-	auth *auth.Auth
+	bookSvc books.BookService
 }
 
 func (b *BookController) listBooks(c echo.Context) error {
 
-	user := c.Get("user").(*jwt.Token)
+	user := c.Get("user")
+	if user != nil {
+		x := user.(*jwt.Token)
+		fmt.Println(x)
+		fmt.Println(c.Get("user"), user)
+	}
+
 	// claims := user.Claims.(*auth.JwtCustomClaims)
 
-	fmt.Println(c.Get("user"), user)
-
-	return c.JSON(http.StatusOK, echo.Map{
-		"books": "book1 book2",
-	})
+	return c.JSON(http.StatusOK, b.bookSvc.ListBooks())
 }
 
-type BookService struct {
+type bookService struct {
 }
 
-func (b *BookService) listBooks() {
-
+func (b bookService) ListBooks() []books.Book {
+	return []books.Book{{
+		Id:    "book-001",
+		Title: "Who steal my book?",
+	}}
 }
