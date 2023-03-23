@@ -1,26 +1,37 @@
 package auth
 
 import (
+	"encoding/json"
 	"errors"
 	"fmt"
 	"go-app/pkg/usr"
 	"time"
 
-	"github.com/golang-jwt/jwt"
+	"github.com/golang-jwt/jwt/v4"
 )
 
-const SECRET = "secret"
+// const SECRET = "secret"
 const SUB = "token-subject"
+
+type CustomClaim struct {
+	// Sub   string `json:"sub"`
+	Id    string `json:"id"`
+	Email string `json:"email"`
+}
+
+type JwtCustomClaims struct {
+	CustomClaim
+	jwt.RegisteredClaims
+}
 
 type Auth struct {
 	UserService usr.UserService
+	secret      string
 }
 
 func New(uSvc usr.UserService) *Auth {
-	return &Auth{uSvc}
+	return &Auth{uSvc, "secret"}
 }
-
-type ClaimData map[string]interface{}
 
 func (a *Auth) Login(id, email, pw string) (string, string, error) {
 
@@ -29,21 +40,24 @@ func (a *Auth) Login(id, email, pw string) (string, string, error) {
 		return "", "", errors.New("user not found")
 	}
 
-	claims := ClaimData{
-		"sub":   SUB,
-		"id":    id,
-		"email": email,
+	c := CustomClaim{
+		id, email,
 	}
-	return generateTokens(claims)
+	return a.generateTokens(c)
 }
 
 func (a *Auth) RefreshToken(refreshToken string) (string, string, error) {
 	claims, err := a.IsValid(refreshToken)
-	cl := ClaimData(claims)
 	if err != nil {
-		return "", "", nil
+		return "", "", err
 	}
-	return generateTokens(cl)
+
+	jsonData, _ := json.Marshal(claims)
+	var st CustomClaim
+	fmt.Println(jsonData)
+
+	json.Unmarshal(jsonData, &st)
+	return a.generateTokens(st)
 }
 
 func (a *Auth) IsValid(t string) (jwt.MapClaims, error) {
@@ -52,7 +66,7 @@ func (a *Auth) IsValid(t string) (jwt.MapClaims, error) {
 		if _, ok := token.Method.(*jwt.SigningMethodHMAC); !ok {
 			return nil, fmt.Errorf("unexpected signing method: %v", token.Header["alg"])
 		}
-		return []byte(SECRET), nil
+		return []byte(a.secret), nil
 	})
 	if err != nil {
 		return nil, err
@@ -65,17 +79,18 @@ func (a *Auth) IsValid(t string) (jwt.MapClaims, error) {
 	}
 
 	// 발급할때의 토큰제목과 일치하는지 체크
-	if claims["sub"].(string) != SUB {
-		return nil, errors.New("invalid subject")
-	}
+	// if claims["sub"].(string) != SUB {
+	// 	return nil, errors.New("invalid subject")
+	// }
 
 	return claims, nil
+	// return token.Claims, nil
 }
 
 // generate tokens
-func generateTokens(claims ClaimData) (string, string, error) {
+func (a *Auth) generateTokens(claims CustomClaim) (string, string, error) {
 	// access 토큰 생성: 유효기간 20분
-	accessToken, err := createToken(
+	accessToken, err := a.createToken(
 		claims,
 		time.Now().Add(time.Minute*20),
 	)
@@ -83,7 +98,7 @@ func generateTokens(claims ClaimData) (string, string, error) {
 		return "", "", err
 	}
 	// refresh 토큰 생성: 유효기간 24시간
-	refreshToken, err := createToken(
+	refreshToken, err := a.createToken(
 		claims,
 		time.Now().Add(time.Hour*24),
 	)
@@ -93,15 +108,31 @@ func generateTokens(claims ClaimData) (string, string, error) {
 	return accessToken, refreshToken, nil
 }
 
-func createToken(data ClaimData, expire time.Time) (string, error) {
-	token := jwt.New(jwt.SigningMethodHS256)
-	claims := token.Claims.(jwt.MapClaims)
-	for key, val := range data {
-		claims[key] = val
-	}
-	claims["exp"] = expire.Unix()
+func (a *Auth) createToken(data CustomClaim, expire time.Time) (string, error) {
+	// token := jwt.New(jwt.SigningMethodHS256)
+	// claims := token.Claims.(jwt.MapClaims)
+	// for key, val := range data {
+	// 	claims[key] = val
+	// }
+	// claims["exp"] = expire.Unix()
 
-	encToken, err := token.SignedString([]byte(SECRET))
+	claims := &JwtCustomClaims{
+		data,
+		jwt.RegisteredClaims{
+			ExpiresAt: jwt.NewNumericDate(expire),
+		},
+	}
+
+	// Create token with claims
+	token := jwt.NewWithClaims(jwt.SigningMethodHS256, claims)
+
+	// // Generate encoded token and send it as response.
+	// t, err := token.SignedString([]byte("secret"))
+	// if err != nil {
+	// 	return err
+	// }
+
+	encToken, err := token.SignedString([]byte(a.secret))
 	if err != nil {
 		return "", err
 	}
